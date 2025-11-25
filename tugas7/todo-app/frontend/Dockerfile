@@ -1,24 +1,32 @@
-FROM node:18-alpine
+# Build stage
+FROM node:18-alpine as build
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy source code
 COPY . .
+# ✅ Build time environment variable untuk API URL
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S react -u 1001
+RUN npm run build
 
-# Change ownership
-RUN chown -R react:nodejs /app
-USER react
+# Production stage
+FROM nginx:alpine
 
-EXPOSE 3000
+# ✅ Copy custom nginx config untuk Cloud Run
+COPY nginx.conf /etc/nginx/nginx.conf
 
-CMD ["npm", "start"]
+# Copy built app
+COPY --from=build /app/build /usr/share/nginx/html
+
+# ✅ Expose port 8080 untuk Cloud Run
+EXPOSE 8080
+
+# ✅ Health check sederhana
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
